@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import AdamW
 from transformers import AutoTokenizer, T5ForConditionalGeneration, get_linear_schedule_with_warmup
-
+from EditDistance import minimum_edit_distance
 # ============================================
 # 1. Load and Prepare Your Data
 # ============================================
@@ -64,8 +64,8 @@ dataset = GlossDataset(input_encodings, labels)
 # 5. Set Up the Custom Training Loop
 # ============================================
 # Hyperparameters
-batch_size = 2
-num_epochs = 10
+batch_size = 4
+num_epochs = 12
 learning_rate = 0.001
 torch.manual_seed(42)
 
@@ -151,4 +151,5 @@ if __name__ == "__main__":
     model.eval()
     with torch.no_grad():
         generated_gloss = generate_gloss(sample_input_sentence, sample_output_translation, tokenizer, model)
+        print(minimum_edit_distance(sample_input_sentence, generated_gloss))
     print("Generated gloss:", generated_gloss)
