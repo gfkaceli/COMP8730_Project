@@ -90,7 +90,15 @@ class TransformerCharEncoder(nn.Module):
 
         # Pass through Transformer encoder. Note: batch_first=True means x remains (batch, seq_len, d_model)
         encoded = self.transformer_encoder(x, mask=src_mask, src_key_padding_mask=src_key_padding_mask)
+
+        # Debugging steps for encoder
+        #print(f"Embeddings: {embeddings}")
+        #print(f"Positional encoding applied: {x}")
+
         return encoded
+
+        
+
 
 
 # Example usage:
@@ -121,6 +129,10 @@ if __name__ == "__main__":
     dummy_input = torch.randint(low=0, high=vocab_size, size=(batch_size, seq_len), dtype=torch.long)
     # For this example, assume that all sequences have full length.
     sentence_lengths = torch.full((batch_size,), seq_len, dtype=torch.long)
+
+    #Debugging step
+    #print(f"Sentence lengths: {sentence_lengths}")
+
 
     # Compute embeddings (or let the encoder do it internally).
     # If your encoder expects raw indices, call it with dummy_input; if it expects embeddings,
