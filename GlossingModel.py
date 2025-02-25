@@ -79,12 +79,23 @@ class MorphemeGlossingModel(LightningModule):
         scheduler = ExponentialLR(optimizer, gamma=self.scheduler_gamma)
         return [optimizer], [scheduler]
 
+    '''
     def encode_sentences(self, sentences: torch.Tensor, sentence_lengths: torch.Tensor) -> torch.Tensor:
         # sentences: (batch, seq_len) with character indices.
         embeddings = self.embeddings(sentences)  # (batch, seq_len, hidden_size)
         # Pass through Transformer encoder.
         encodings = self.encoder(sentences)
         return encodings
+    '''
+    
+    #had to pass sentence_lengths too to the forward method
+    def encode_sentences(self, sentences: torch.Tensor, sentence_lengths: torch.Tensor) -> torch.Tensor:
+     # sentences: (batch, seq_len) with character indices.
+     embeddings = self.embeddings(sentences)  # (batch, seq_len, hidden_size)
+     # Pass through Transformer encoder with sentence lengths.
+     encodings = self.encoder(embeddings, sentence_lengths)
+     return encodings
+
 
     def get_words(self, encodings: torch.Tensor, word_extraction_index: torch.Tensor) -> torch.Tensor:
         # Extract word representations based on word_extraction_index.
