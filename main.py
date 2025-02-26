@@ -6,17 +6,18 @@ from collections import Counter
 import pytorch_lightning as pl
 from GlossingModel import GlossingPipeline
 
+
 #########################################
 # 1. Custom Dataset for CSV Data
 #########################################
 class GlossingDataset(Dataset):
     def __init__(self, csv_file, max_src_len=50, max_tgt_len=50, max_trans_len=50):
         self.data = pd.read_csv(csv_file).dropna().reset_index(drop=True)  # Remove empty rows
-        
+
         self.max_src_len = max_src_len
         self.max_tgt_len = max_tgt_len
         self.max_trans_len = max_trans_len
-        
+
         # Build vocabularies dynamically
         self.src_vocab = self.build_vocab(self.data["Language"], char_level=True)
         self.gloss_vocab = self.build_vocab(self.data["Gloss"], char_level=False)
@@ -41,7 +42,6 @@ class GlossingDataset(Dataset):
         inv_vocab = {idx: tok for tok, idx in vocab.items()}
         return " ".join([inv_vocab.get(idx, "<unk>") for idx in tensor.tolist()])
 
-
     def __len__(self):
         return len(self.data)
 
@@ -61,22 +61,24 @@ class GlossingDataset(Dataset):
                 torch.tensor(gloss_indices, dtype=torch.long),
                 torch.tensor(trans_indices, dtype=torch.long))
 
+
 def collate_fn(batch):
     src_batch, tgt_batch, trans_batch = zip(*batch)
     return (torch.stack(src_batch, dim=0),
             torch.stack(tgt_batch, dim=0),
             torch.stack(trans_batch, dim=0))
 
+
 #########################################
 # 2. Training Script using PyTorch Lightning
 #########################################
 if __name__ == '__main__':
     pl.seed_everything(42)
-    
+
     # Load dataset
     dataset = GlossingDataset("data/Dummy_Dataset.csv", max_src_len=50, max_tgt_len=20, max_trans_len=10)
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=collate_fn)
-    
+
     # Model parameters
     char_vocab_size = len(dataset.src_vocab)
     gloss_vocab_size = len(dataset.gloss_vocab)
@@ -94,12 +96,13 @@ if __name__ == '__main__':
     model = GlossingPipeline(char_vocab_size, gloss_vocab_size, trans_vocab_size,
                              embed_dim, num_heads, ff_dim, num_layers, dropout, use_gumbel,
                              learning_rate, gloss_pad_idx)
-    
+
     trainer = pl.Trainer(max_epochs=10, accelerator="auto", log_every_n_steps=5)
     trainer.fit(model, dataloader)
-    
+
     # Saving the trained model here
     trainer.save_checkpoint("glossing_model.ckpt")
+
 
 #########################################
 # 3. Inference Function
@@ -107,7 +110,8 @@ if __name__ == '__main__':
 def predict_gloss(model, dataset, source_text, translation_text, max_len=20):
     # Convert input text to tensors
     src_tensor = dataset.text_to_tensor(source_text, dataset.src_vocab, char_level=True).unsqueeze(0)  # (1, seq_len)
-    trans_tensor = dataset.text_to_tensor(translation_text, dataset.trans_vocab, char_level=False).unsqueeze(0)  # (1, seq_len)
+    trans_tensor = dataset.text_to_tensor(translation_text, dataset.trans_vocab, char_level=False).unsqueeze(
+        0)  # (1, seq_len)
 
     # Convert source tensor to one-hot encoding (required for encoder)
     src_tensor = F.one_hot(src_tensor, num_classes=len(dataset.src_vocab)).float()
@@ -119,10 +123,10 @@ def predict_gloss(model, dataset, source_text, translation_text, max_len=20):
 
     for _ in range(max_len):  # Generate up to max_len tokens
         gloss_logits, _, _, _ = model(src_tensor, torch.tensor([src_tensor.shape[1]]), tgt_tensor, trans_tensor)
-        
+
         # Getting the next token
         next_token = torch.argmax(gloss_logits[:, -1, :], dim=-1).item()
-        
+
         if next_token == dataset.gloss_vocab["<pad>"]:  # Stop if padding token is predicted
             break
 
@@ -141,7 +145,6 @@ def predict_gloss(model, dataset, source_text, translation_text, max_len=20):
 #########################################
 
 dataset = GlossingDataset("data/Dummy_Dataset.csv")
-
 
 trained_model = GlossingPipeline.load_from_checkpoint("glossing_model.ckpt")
 
