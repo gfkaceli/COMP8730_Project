@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from GlossingModel import GlossingPipeline
 from main import GlossingDataset, collate_fn
+from Utilities import word_edit_distance, compute_morpheme_level_gloss_accuracy
 
 
 def main():
@@ -56,28 +57,46 @@ def main():
     )
     model.eval()
 
+    # Run prediction
     # Run prediction.
     with torch.no_grad():
         logits, morpheme_count, tau, seg_probs = model(src_features, src_len_tensor, tgt_tensor, trans_tensor,
                                                        learn_segmentation=True)
 
     # Get predicted gloss tokens (remove batch dimension).
-    predicted_indices = torch.argmax(logits, dim=-1).squeeze(0)
-
-    # Create an inverse gloss vocabulary for decoding.
+    predicted_indices = torch.argmax(logits, dim=-1).squeeze(0)  # (tgt_seq_len,)
     inv_gloss_vocab = {idx: token for token, idx in dataset.gloss_vocab.items()}
-    predicted_gloss = " ".join([inv_gloss_vocab.get(idx.item(), "<unk>") for idx in predicted_indices])
+    predicted_tokens = [inv_gloss_vocab.get(idx.item(), "<unk>") for idx in predicted_indices]
 
-    # stop decoding when we see the stop token
-    stop_index = predicted_gloss.index('</s>')
+    # Truncate predicted tokens at the first occurrence of "</s>".
+    if "</s>" in predicted_tokens:
+        stop_index = predicted_tokens.index("</s>")
+        predicted_tokens = predicted_tokens[:stop_index]
+    predicted_gloss = " ".join(predicted_tokens)
 
+    # Process the ground truth gloss.
+    ground_truth_tokens = [inv_gloss_vocab.get(idx.item(), "<unk>") for idx in gloss_tensor]
+    # Remove start token if present.
+    if ground_truth_tokens and ground_truth_tokens[0] == "<s>":
+        ground_truth_tokens = ground_truth_tokens[1:]
+    # Truncate at the first occurrence of "</s>".
+    if "</s>" in ground_truth_tokens:
+        gt_stop_index = ground_truth_tokens.index("</s>")
+        ground_truth_tokens = ground_truth_tokens[:gt_stop_index]
+    ground_truth_gloss = " ".join(ground_truth_tokens)
 
-    # Print the sample input and predicted gloss.
+    # Compute morpheme-level glossing accuracy.
+    macc = compute_morpheme_level_gloss_accuracy([predicted_gloss[4:]], [ground_truth_gloss], pad_token="NULL")
+    ed = word_edit_distance(predicted_gloss[4:], ground_truth_gloss)
+    # Print the sample input, ground truth gloss, predicted gloss, and morpheme-level accuracy.
     print("Sample Input (Language):")
     print(dataset.tensor_to_text(src_tensor, dataset.src_vocab))
+    print("\nGround Truth Gloss:")
+    print(ground_truth_gloss)
     print("\nPredicted Gloss:")
-    print(predicted_gloss[:stop_index + 4])
-
+    print(predicted_gloss)
+    print("\nMorpheme-level Glossing Accuracy:")
+    print(macc)
 
 if __name__ == "__main__":
     main()
