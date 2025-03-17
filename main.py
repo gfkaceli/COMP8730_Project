@@ -129,6 +129,6 @@ if __name__ == '__main__':
     trainer.fit(model, dataloader)
 
     # Save the trained model checkpoint.
-    checkpoint_path = "glossing_model.ckpt"
+    checkpoint_path = "models/glossing_model.ckpt"
     trainer.save_checkpoint(checkpoint_path)
     print(f"Model checkpoint saved to {checkpoint_path}")

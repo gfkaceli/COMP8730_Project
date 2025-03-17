@@ -72,6 +72,8 @@ class GlossingPipeline(pl.LightningModule):
         """
         # Encode source characters.
         encoder_outputs = self.encoder(src_features, src_lengths)
+        assert trans.max().item() < self.translation_encoder.num_embeddings, \
+            f"Found token index {trans.max().item()} which exceeds vocab size {self.translation_encoder.num_embeddings}"
 
         # Compute segmentation.
         # For Track 1 (unsupervised), num_morphemes is None.
@@ -107,6 +109,29 @@ class GlossingPipeline(pl.LightningModule):
         loss = self.criterion(logits, tgt_flat)
         self.log("train_loss", loss, on_step=True, on_epoch=True)
         return loss
+
+    def validation_step(self, batch, batch_idx):
+        src_batch, src_len_batch, tgt_batch, trans_batch = batch
+        src_features = F.one_hot(src_batch, num_classes=self.encoder.input_size).float()
+        logits, _, _, _ = self(src_features, src_len_batch, tgt_batch, trans_batch,
+                               learn_segmentation=True, num_morphemes=None)
+        batch_size, tgt_seq_len, gloss_vocab_size = logits.size()
+        logits = logits.view(-1, gloss_vocab_size)
+        tgt_flat = tgt_batch.view(-1)
+        loss = self.criterion(logits, tgt_flat)
+        self.log("val_loss", loss, on_step=False, on_epoch=True)
+
+        # Manually store the loss for epoch end averaging.
+        if not hasattr(self, "val_outputs"):
+            self.val_outputs = []
+        self.val_outputs.append(loss)
+        return loss
+
+    def on_validation_epoch_end(self):
+        if hasattr(self, "val_outputs") and self.val_outputs:
+            avg_loss = torch.stack(self.val_outputs).mean()
+            self.log("val_loss_epoch", avg_loss)
+            self.val_outputs = []  # Clear for next epoch
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
