@@ -47,24 +47,57 @@ This project implements an enhanced pipeline for automated interlinear glossing.
 
 ## Installation
 
-This project is best run using conda.
-- **Python 3.12.7**
-- **Conda 24.9.2**
+This project is best run using conda 
+however if you do not have conda already installed and configured
+we recommend you use python to run the start up scripts immediately and get the preliminary results.
 
-If you do not have conda replace conda with python in these steps.
-However, we recommend the use of conda due to GPU access,
+We recommend the use of conda due to GPU access,
 for these purposes to just run the sample train and evaluate scripts a 
 CPU will suffice.
 Follow these steps:
 
+- Use Python versions between 3.11.0 to 3.12.7
+
+**PYTHON VIEW**
 1. **Clone the Repository:**
    ```bash
-   git clone <repository-url>
-   cd <repository-directory>
+   git clone https://github.com/gfkaceli/COMP8730_Project.git
+   cd COMP8730_Project
+2. **Create Environment and Install Dependencies**
+   - A. Create Virtual Environment:
+      ```bash
+      python -m venv venv
+   - B. Activate Virtual Environment:
+     - For Windows:
+        ```bash
+        venv\Scripts\activate
+     - For Linux/MacOS:
+       ```bash
+        source venv/bin/activate
+   - C. To Install Dependencies Do:
+       ```bash
+        pip install -r requirements.txt
+   
+4. **Run the Training Script**
+    ```bash
+   python main.py
+
+5. **Run the Inference Script**
+    ```bash
+   python Sample.py
+
+**CONDA VIEW**
+
+- Conda version utilized is 24.11.3
+
+1. **Clone the Repository:**
+   ```bash
+   git clone https://github.com/gfkaceli/COMP8730_Project.git
+   cd COMP8730_Project
    
 2. **Create Environment and Install Dependencies**
    ```bash
-   conda create -n glossing_env python=3.12.7
+   conda create -n glossing_env python=3.12.7 pip # python version 3.11.0 to 3.12.7 should work so feel free to change
    conda activate glossing_env
    pip install -r requirements.txt
 
