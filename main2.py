@@ -16,12 +16,12 @@ if __name__ == '__main__':
     }
 
     # Define file paths for training, validation, and test data.
-    train_file = "data/Natugu/ntu-train-track1-uncovered"
-    val_file = "data/Natugu/ntu-dev-track1-uncovered"
-    test_file = "data/Natugu/ntu-test-track1-uncovered"
+    train_file = "data/Gitksan/git-train-track1-uncovered"
+    val_file = "data/Gitksan/git-dev-track1-uncovered"
+    test_file = "data/Gitksan/git-test-track1-uncovered"
 
     # Create the DataModule instance.
-    dm = GlossingDataModule(train_file=train_file, val_file=val_file, test_file=test_file, batch_size=128)
+    dm = GlossingDataModule(train_file=train_file, val_file=val_file, test_file=test_file, batch_size=7)
     dm.setup(stage="fit")
     dm.setup(stage="test")
 
@@ -32,7 +32,7 @@ if __name__ == '__main__':
 
     # Define hyperparameters.
     embed_dim = 128
-    num_heads = 8
+    num_heads = 16
     ff_dim = 512
     num_layers = 2
     dropout = 0.1
@@ -62,7 +62,7 @@ if __name__ == '__main__':
 
     # Configure the PyTorch Lightning Trainer.
     trainer = pl.Trainer(
-        max_epochs=100,
+        max_epochs=20,
         accelerator="auto",
         log_every_n_steps=5,
         deterministic=True
@@ -72,10 +72,26 @@ if __name__ == '__main__':
     trainer.fit(model, dm)
 
     # Save the trained model checkpoint.
-    checkpoint_path = "models/glossing_model_natugu.ckpt"
+    checkpoint_path = "models/glossing_model_gitksan.ckpt"
     trainer.save_checkpoint(checkpoint_path)
     print(f"Model checkpoint saved to {checkpoint_path}")
 
-    # Evaluate on the test set.
-    #test_results = trainer.predict()
-    #print("Test results:", test_results)
+    predictions = trainer.predict(model, dataloaders=dm.test_dataloader())
+
+    # Create an inverse mapping for the gloss vocabulary.
+    # We use the training dataset gloss vocabulary (which was built solely from the training data).
+    inv_gloss_vocab = {idx: token for token, idx in dm.train_dataset.gloss_vocab.items()}
+    count = 0
+    # Process and print predictions.
+    print("\nPredictions on the test set:")
+    for batch in predictions:
+        # batch is a tensor of shape (batch_size, tgt_seq_len)
+        for pred in batch:
+            count+=1
+            # Convert predicted indices to tokens; ignore padding.
+            tokens = [inv_gloss_vocab.get(idx.item(), "<unk>") for idx in pred if idx.item() != gloss_pad_idx]
+            # Truncate at the stop token "</s>" if present.
+            if "</s>" in tokens:
+                tokens = tokens[:tokens.index("</s>")]
+            predicted_gloss = " ".join(tokens)
+            print(f"Predicted Gloss {count}:", predicted_gloss)

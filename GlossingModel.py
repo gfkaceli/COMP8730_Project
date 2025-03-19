@@ -133,5 +133,16 @@ class GlossingPipeline(pl.LightningModule):
             self.log("val_loss_epoch", avg_loss)
             self.val_outputs = []  # Clear for next epoch
 
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+
+        src_batch, src_len_batch, tgt_batch, trans_batch = batch
+        # Convert source indices into one-hot vectors.
+        src_features = F.one_hot(src_batch, num_classes=self.encoder.input_size).float()
+        # Run forward pass in inference mode (set learn_segmentation=False to use soft segmentation or to avoid noise).
+        logits, _, _, _ = self(src_features, src_len_batch, tgt_batch, trans_batch, learn_segmentation=False)
+        # Obtain predictions by taking the argmax over the token probabilities.
+        predictions = torch.argmax(logits, dim=-1)  # shape: (batch_size, tgt_seq_len)
+        return predictions
+
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
