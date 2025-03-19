@@ -205,22 +205,22 @@ class GlossingDataModule(LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True,
-                          collate_fn=self._batch_collate, num_workers=4, persistent_workers=True)
+                          collate_fn=self._batch_collate, num_workers=6, persistent_workers=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False,
-                          collate_fn=self._batch_collate, num_workers=4, persistent_workers=True)
+                          collate_fn=self._batch_collate, num_workers=6, persistent_workers=True)
 
     def test_dataloader(self):
         return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False,
-                          collate_fn=self._batch_collate, num_workers=4, persistent_workers=True)
+                          collate_fn=self._batch_collate, num_workers=6, persistent_workers=True)
 
 
 if __name__ == "__main__":
     # Example usage.
-    train_file = "data/Gitksan/git-train-track1-uncovered"
-    val_file = "data/Gitksan/git-dev-track1-uncovered"
-    test_file = "data/Gitksan/git-test-track1-uncovered"
+    train_file = "data/Lezgi/lez-train-track1-uncovered"
+    val_file = "data/Lezgi/lez-dev-track1-uncovered"
+    test_file = "data/Lezgi/lez-test-track1-uncovered"
 
     dm = GlossingDataModule(train_file, val_file, test_file, batch_size=32)
     dm.setup(stage="fit")
@@ -230,14 +230,14 @@ if __name__ == "__main__":
     print("Number of test samples:", len(dm.test_dataset))
 
     # Print a single batch sample in text format.
-    loader = dm.train_dataloader()
+    loader = dm.test_dataloader()
     for batch in loader:
         src_tensor, src_lengths, gloss_tensor, trans_tensor = batch
         print("Batch sample (in text format):")
         for i in range(src_tensor.size(0)):
-            src_text = dm.train_dataset.tensor_to_text(src_tensor[i], dm.train_dataset.src_vocab)
-            gloss_text = dm.train_dataset.tensor_to_text(gloss_tensor[i], dm.train_dataset.gloss_vocab)
-            trans_text = dm.train_dataset.tensor_to_text(trans_tensor[i], dm.train_dataset.trans_vocab)
+            src_text = dm.test_dataset.tensor_to_text(src_tensor[i], dm.test_dataset.src_vocab)
+            gloss_text = dm.test_dataset.tensor_to_text(gloss_tensor[i], dm.test_dataset.gloss_vocab)
+            trans_text = dm.test_dataset.tensor_to_text(trans_tensor[i], dm.test_dataset.trans_vocab)
             print(f"Sample {i + 1}:")
             print("  Source:", src_text)
             print("  Gloss: ", gloss_text)

@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from GlossingModel import GlossingPipeline
 from main import GlossingDataset, collate_fn
-from Utilities import word_edit_distance, compute_morpheme_level_gloss_accuracy
+from metrics import word_edit_distance, compute_morpheme_level_gloss_accuracy
 
 
 def main():
