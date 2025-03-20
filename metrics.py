@@ -62,43 +62,61 @@ def average_word_edit_distance(predictions: list[str], targets: list[str]) -> fl
 def compute_word_level_gloss_accuracy(predictions: list, targets: list) -> float:
     """
     Computes word-level glossing accuracy over a set of predictions.
-    A predicted gloss is considered correct only if it exactly matches the
-    corresponding target gloss (after trimming).
-
-    Args:
-        predictions (list of str): List of predicted gloss strings.
-        targets (list of str): List of ground truth gloss strings.
-
-    Returns:
-        float: Fraction of glosses that exactly match the target.
+    A predicted gloss is considered correct based on the percentage of matching tokens,
+    ignoring <unk> tokens in the target.
     """
     if len(targets) == 0:
         return 1.0
-    correct = sum(1 for pred, target in zip(predictions, targets) if pred.strip() == target.strip())
-    return correct / len(targets)
+
+    total_matching_tokens = 0
+    total_tokens = 0
+
+    for pred, target in zip(predictions, targets):
+        # Split into tokens
+        pred_tokens = pred.strip().split()
+        target_tokens = target.strip().split()
+
+        # Ignore <unk> tokens in the target
+        denominator = [t for t in target_tokens if t!="<s>"] # <s> should not count towards our calculation
+        target_tokens = [t for t in target_tokens if t != "<unk>"]
+
+        # Truncate or pad predicted tokens to match the length of the target tokens
+        if len(pred_tokens) < len(target_tokens):
+            pred_tokens += ["<pad>"] * (len(target_tokens) - len(pred_tokens))
+        elif len(pred_tokens) > len(target_tokens):
+            pred_tokens = pred_tokens[:len(target_tokens)]
+
+        # Count matching tokens
+        matching_tokens = sum(1 for p, t in zip(pred_tokens, target_tokens) if p == t)
+        total_matching_tokens += matching_tokens
+        total_tokens += len(denominator)
+
+    # Return the percentage of matching tokens
+    return total_matching_tokens / total_tokens if total_tokens > 0 else 1.0
 
 
 def compute_morpheme_level_gloss_accuracy(predictions: list, targets: list, pad_token: str = "NULL") -> float:
     """
-    Computes morpheme-level glossing accuracy over a set of predictions.
-    For each predicted gloss, if the number of tokens is less than the target,
-    the prediction is padded with the specified pad_token. If there are extra tokens,
-    they are discarded. Accuracy is defined as the fraction of morphemes that are correctly
-    glossed.
+    Computes morpheme-level gloss accuracy.
+    For each gloss, it splits the predicted and gold gloss by hyphen ("-").
+    If the predicted number of morphemes is less than the gold,
+    the predictions are padded with the provided pad_token;
+    if greater, the predictions are truncated.
+    Then it computes the fraction of morphemes that exactly match.
 
     Args:
-        predictions (list of str): List of predicted gloss strings.
-        targets (list of str): List of ground truth gloss strings.
-        pad_token (str): Token used to pad predictions if too few morphemes are predicted.
+        predictions (list): List of predicted gloss strings.
+        targets (list): List of gold standard gloss strings.
+        pad_token (str): The token to pad with if the predicted morpheme list is too short.
 
     Returns:
-        float: Fraction of correctly glossed morphemes over all morphemes.
+        float: Morpheme-level gloss accuracy as a fraction.
     """
     total_correct = 0
     total_tokens = 0
     for pred, target in zip(predictions, targets):
-        pred_tokens = pred.split()
-        target_tokens = target.split()
+        pred_tokens = pred.strip().split("-")
+        target_tokens = target.strip().split("-")
         # Pad or truncate predicted tokens to match target length.
         if len(pred_tokens) < len(target_tokens):
             pred_tokens += [pad_token] * (len(target_tokens) - len(pred_tokens))

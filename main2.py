@@ -1,27 +1,64 @@
 import pytorch_lightning as pl
 from GlossingModel import GlossingPipeline
 from data import GlossingDataModule
+from metrics import compute_word_level_gloss_accuracy, compute_morpheme_level_gloss_accuracy
+import argparse
+
+language_code_mapping = {
+    "Arapaho": "arp",
+    "Gitksan": "git",
+    "Lezgi": "lez",
+    "Natugu": "ntu",
+    "Nyangbo": "nyb",
+    "Tsez": "ddo",
+    "Uspanteko": "usp",
+}
+
+def make_argument_parser():
+    parser = argparse.ArgumentParser(description="Glossing Model Arguments")
+    parser.add_argument(
+        "--language",
+        type=str,
+        required=True,
+        choices=list(language_code_mapping.keys()),
+    )
+
+    parser.add_argument("--batch",
+                        type=int, default=128, required=False, help="Batch size.")
+    parser.add_argument("--layers",
+                        type=int, default=2, required=False, help="Number of Layers")
+    parser.add_argument("--dropout",
+                        type=int, default=0.1, required=False, help="Dropout for each Layer")
+    parser.add_argument("--lr",
+                        type=int, default=0.001, required=False, help="The learning rate")
+    parser.add_argument("--embdim",
+                        type=int, default=128, required=False, help="Embedding Dimensions")
+    parser.add_argument("--ffdim",
+                        type=int, default=512, required=False, help="FeedForward Dimension")
+    parser.add_argument("--numheads",
+                        type=int, default=16, required=False, help="Number of heads")
+    parser.add_argument("--epochs",
+                        type=int, default=25, required=False, help="Number of Epochs")
+
+    return parser.parse_args()
+
 
 if __name__ == '__main__':
     pl.seed_everything(42, workers=True)
+    args = make_argument_parser()
 
-    language_code_mapping = {
-        "Arapaho": "arp",
-        "Gitksan": "git",
-        "Lezgi": "lez",
-        "Natugu": "ntu",
-        "Nyangbo": "nyb",
-        "Tsez": "ddo",
-        "Uspanteko": "usp",
-    }
+    language = args.language
+    language_code = language_code_mapping[language] # language is the key in the map
+
 
     # Define file paths for training, validation, and test data.
-    train_file = "data/Gitksan/git-train-track1-uncovered"
-    val_file = "data/Gitksan/git-dev-track1-uncovered"
-    test_file = "data/Gitksan/git-test-track1-uncovered"
+    train_file = f"data/{language}/{language_code}-train-track1-uncovered"
+    val_file = f"data/{language}/{language_code}-dev-track1-uncovered"
+    test_file = f"data/{language}/{language_code}-test-track1-uncovered"
 
     # Create the DataModule instance.
-    dm = GlossingDataModule(train_file=train_file, val_file=val_file, test_file=test_file, batch_size=7)
+    dm = GlossingDataModule(train_file=train_file, val_file=val_file, test_file=test_file,
+                            batch_size=args.batch)
     dm.setup(stage="fit")
     dm.setup(stage="test")
 
@@ -31,16 +68,16 @@ if __name__ == '__main__':
     trans_vocab_size = dm.trans_alphabet_size      # Translation vocabulary size
 
     # Define hyperparameters.
-    embed_dim = 128
-    num_heads = 16
-    ff_dim = 512
-    num_layers = 2
-    dropout = 0.1
+    embed_dim = args.embdim
+    num_heads = args.numheads
+    ff_dim = args.ffdim
+    num_layers = args.layers
+    dropout = args.dropout
     use_gumbel = True
-    learning_rate = 0.001
+    learning_rate = args.lr
     use_relative = True
-    max_relative_position = 16
-    # Assume the gloss tokenizer uses "<pad>" as the padding token.
+    max_relative_position = 64
+    # the gloss tokenizer uses "<pad>" as the padding token.
     gloss_pad_idx = dm.target_tokenizer["<pad>"]
 
     # Instantiate the integrated glossing model.
@@ -62,7 +99,7 @@ if __name__ == '__main__':
 
     # Configure the PyTorch Lightning Trainer.
     trainer = pl.Trainer(
-        max_epochs=20,
+        max_epochs=args.epochs,
         accelerator="auto",
         log_every_n_steps=5,
         deterministic=True
@@ -72,26 +109,52 @@ if __name__ == '__main__':
     trainer.fit(model, dm)
 
     # Save the trained model checkpoint.
-    checkpoint_path = "models/glossing_model_gitksan.ckpt"
+    checkpoint_path = f"models/glossing_model_{language_code}.ckpt"
     trainer.save_checkpoint(checkpoint_path)
     print(f"Model checkpoint saved to {checkpoint_path}")
 
+  # Get predictions and true glosses.
+    print("Loading the model from the checkpoint...")
+    model = GlossingPipeline.load_from_checkpoint(checkpoint_path)
     predictions = trainer.predict(model, dataloaders=dm.test_dataloader())
 
     # Create an inverse mapping for the gloss vocabulary.
-    # We use the training dataset gloss vocabulary (which was built solely from the training data).
     inv_gloss_vocab = {idx: token for token, idx in dm.train_dataset.gloss_vocab.items()}
-    count = 0
-    # Process and print predictions.
-    print("\nPredictions on the test set:")
+
+    # Extract true glosses from the test dataset.
+    true_glosses = []
+    for batch in dm.test_dataloader():
+        _, _, tgt_batch, _ = batch
+        for tgt in tgt_batch:
+            gloss_tokens = [inv_gloss_vocab.get(idx.item(), "<unk>") for idx in tgt if idx.item() != gloss_pad_idx]
+            if "</s>" in gloss_tokens:
+                gloss_tokens = gloss_tokens[:gloss_tokens.index("</s>")]
+            true_gloss = " ".join(gloss_tokens)
+            true_glosses.append(true_gloss)
+
+    # Process and print predictions alongside true glosses.
+    predicted_glosses = []
+    sample_index = 0  # Global sample index across all batches
+    print("\nPredictions and True Glosses:")
     for batch in predictions:
-        # batch is a tensor of shape (batch_size, tgt_seq_len)
         for pred in batch:
-            count+=1
-            # Convert predicted indices to tokens; ignore padding.
             tokens = [inv_gloss_vocab.get(idx.item(), "<unk>") for idx in pred if idx.item() != gloss_pad_idx]
-            # Truncate at the stop token "</s>" if present.
             if "</s>" in tokens:
                 tokens = tokens[:tokens.index("</s>")]
             predicted_gloss = " ".join(tokens)
-            print(f"Predicted Gloss {count}:", predicted_gloss)
+            predicted_glosses.append(predicted_gloss)
+            # Print predicted gloss and true gloss side by side.
+            print(f"Sample {sample_index + 1}:")
+            print(f"  Predicted Gloss: {predicted_gloss}")
+            print(f"  True Gloss:     {true_glosses[sample_index]}")
+            print()  # Add a blank line for readability.
+            sample_index += 1  # Increment the global sample index
+
+    # Calculate and print word-level and morpheme-level gloss accuracy.
+    print(type(predicted_glosses))
+    print(type(true_glosses))
+    word_level_accuracy = compute_word_level_gloss_accuracy(predicted_glosses, true_glosses)
+    morpheme_level_accuracy = compute_morpheme_level_gloss_accuracy(predicted_glosses, true_glosses)
+
+    print("\nWord-Level Gloss Accuracy:", word_level_accuracy)
+    print("Morpheme-Level Gloss Accuracy:", morpheme_level_accuracy)

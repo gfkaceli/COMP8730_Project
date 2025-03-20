@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from GlossingModel import GlossingPipeline
-from main import GlossingDataset, collate_fn
+from old_main import GlossingDataset, collate_fn
 from metrics import word_edit_distance, compute_morpheme_level_gloss_accuracy
 
 
