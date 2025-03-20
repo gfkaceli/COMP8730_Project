@@ -1,6 +1,42 @@
 import pytorch_lightning as pl
 from GlossingModel import GlossingPipeline
 from data import GlossingDataModule
+from metrics import compute_morpheme_level_gloss_accuracy
+
+# Override the word-level accuracy function
+def compute_word_level_gloss_accuracy(predictions: list, targets: list) -> float:
+    """
+    Computes word-level glossing accuracy over a set of predictions.
+    A predicted gloss is considered correct based on the percentage of matching tokens,
+    ignoring <unk> tokens in the target.
+    """
+    if len(targets) == 0:
+        return 1.0
+    
+    total_matching_tokens = 0
+    total_tokens = 0
+    
+    for pred, target in zip(predictions, targets):
+        # Split into tokens
+        pred_tokens = pred.strip().split()
+        target_tokens = target.strip().split()
+        
+        # Ignore <unk> tokens in the target
+        target_tokens = [t for t in target_tokens if t != "<unk>"]
+        
+        # Truncate or pad predicted tokens to match the length of the target tokens
+        if len(pred_tokens) < len(target_tokens):
+            pred_tokens += ["<pad>"] * (len(target_tokens) - len(pred_tokens))
+        elif len(pred_tokens) > len(target_tokens):
+            pred_tokens = pred_tokens[:len(target_tokens)]
+        
+        # Count matching tokens
+        matching_tokens = sum(1 for p, t in zip(pred_tokens, target_tokens) if p == t)
+        total_matching_tokens += matching_tokens
+        total_tokens += len(target_tokens)
+    
+    # Return the percentage of matching tokens
+    return total_matching_tokens / total_tokens if total_tokens > 0 else 1.0
 
 if __name__ == '__main__':
     pl.seed_everything(42, workers=True)
@@ -16,9 +52,9 @@ if __name__ == '__main__':
     }
 
     # Define file paths for training, validation, and test data.
-    train_file = "data/Gitksan/git-train-track1-uncovered"
-    val_file = "data/Gitksan/git-dev-track1-uncovered"
-    test_file = "data/Gitksan/git-test-track1-uncovered"
+    train_file = "data/Lezgi/lez-train-track1-uncovered"
+    val_file = "data/Lezgi/lez-dev-track1-uncovered"
+    test_file = "data/Lezgi/lez-test-track1-uncovered"
 
     # Create the DataModule instance.
     dm = GlossingDataModule(train_file=train_file, val_file=val_file, test_file=test_file, batch_size=7)
@@ -76,22 +112,44 @@ if __name__ == '__main__':
     trainer.save_checkpoint(checkpoint_path)
     print(f"Model checkpoint saved to {checkpoint_path}")
 
+    # Get predictions and true glosses.
     predictions = trainer.predict(model, dataloaders=dm.test_dataloader())
 
     # Create an inverse mapping for the gloss vocabulary.
-    # We use the training dataset gloss vocabulary (which was built solely from the training data).
     inv_gloss_vocab = {idx: token for token, idx in dm.train_dataset.gloss_vocab.items()}
-    count = 0
-    # Process and print predictions.
-    print("\nPredictions on the test set:")
+
+    # Extract true glosses from the test dataset.
+    true_glosses = []
+    for batch in dm.test_dataloader():
+        _, _, tgt_batch, _ = batch
+        for tgt in tgt_batch:
+            gloss_tokens = [inv_gloss_vocab.get(idx.item(), "<unk>") for idx in tgt if idx.item() != gloss_pad_idx]
+            if "</s>" in gloss_tokens:
+                gloss_tokens = gloss_tokens[:gloss_tokens.index("</s>")]
+            true_gloss = " ".join(gloss_tokens)
+            true_glosses.append(true_gloss)
+
+    # Process and print predictions alongside true glosses.
+    predicted_glosses = []
+    sample_index = 0  # Global sample index across all batches
+    print("\nPredictions and True Glosses:")
     for batch in predictions:
-        # batch is a tensor of shape (batch_size, tgt_seq_len)
         for pred in batch:
-            count+=1
-            # Convert predicted indices to tokens; ignore padding.
             tokens = [inv_gloss_vocab.get(idx.item(), "<unk>") for idx in pred if idx.item() != gloss_pad_idx]
-            # Truncate at the stop token "</s>" if present.
             if "</s>" in tokens:
                 tokens = tokens[:tokens.index("</s>")]
             predicted_gloss = " ".join(tokens)
-            print(f"Predicted Gloss {count}:", predicted_gloss)
+            predicted_glosses.append(predicted_gloss)
+            # Print predicted gloss and true gloss side by side.
+            print(f"Sample {sample_index + 1}:")
+            print(f"  Predicted Gloss: {predicted_gloss}")
+            print(f"  True Gloss:     {true_glosses[sample_index]}")
+            print()  # Add a blank line for readability.
+            sample_index += 1  # Increment the global sample index
+
+    # Calculate and print word-level and morpheme-level gloss accuracy.
+    word_level_accuracy = compute_word_level_gloss_accuracy(predicted_glosses, true_glosses)
+    morpheme_level_accuracy = compute_morpheme_level_gloss_accuracy(predicted_glosses, true_glosses)
+
+    print("\nWord-Level Gloss Accuracy:", word_level_accuracy)
+    print("Morpheme-Level Gloss Accuracy:", morpheme_level_accuracy)

@@ -62,20 +62,36 @@ def average_word_edit_distance(predictions: list[str], targets: list[str]) -> fl
 def compute_word_level_gloss_accuracy(predictions: list, targets: list) -> float:
     """
     Computes word-level glossing accuracy over a set of predictions.
-    A predicted gloss is considered correct only if it exactly matches the
-    corresponding target gloss (after trimming).
-
-    Args:
-        predictions (list of str): List of predicted gloss strings.
-        targets (list of str): List of ground truth gloss strings.
-
-    Returns:
-        float: Fraction of glosses that exactly match the target.
+    A predicted gloss is considered correct based on the percentage of matching tokens,
+    ignoring <unk> tokens in the target.
     """
     if len(targets) == 0:
         return 1.0
-    correct = sum(1 for pred, target in zip(predictions, targets) if pred.strip() == target.strip())
-    return correct / len(targets)
+    
+    total_matching_tokens = 0
+    total_tokens = 0
+    
+    for pred, target in zip(predictions, targets):
+        # Split into tokens
+        pred_tokens = pred.strip().split()
+        target_tokens = target.strip().split()
+        
+        # Ignore <unk> tokens in the target
+        target_tokens = [t for t in target_tokens if t != "<unk>"]
+        
+        # Truncate or pad predicted tokens to match the length of the target tokens
+        if len(pred_tokens) < len(target_tokens):
+            pred_tokens += ["<pad>"] * (len(target_tokens) - len(pred_tokens))
+        elif len(pred_tokens) > len(target_tokens):
+            pred_tokens = pred_tokens[:len(target_tokens)]
+        
+        # Count matching tokens
+        matching_tokens = sum(1 for p, t in zip(pred_tokens, target_tokens) if p == t)
+        total_matching_tokens += matching_tokens
+        total_tokens += len(target_tokens)
+    
+    # Return the percentage of matching tokens
+    return total_matching_tokens / total_tokens if total_tokens > 0 else 1.0
 
 
 def compute_morpheme_level_gloss_accuracy(predictions: list, targets: list, pad_token: str = "NULL") -> float:
