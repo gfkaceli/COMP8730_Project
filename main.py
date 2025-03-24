@@ -78,7 +78,7 @@ if __name__ == '__main__':
     use_relative = True
     max_relative_position = 64
     # the gloss tokenizer uses "<pad>" as the padding token.
-    gloss_pad_idx = dm.target_tokenizer["<pad>"]
+    gloss_pad_idx = dm.target_tokenizer.get_stoi()["<pad>"]
 
     # Instantiate the integrated glossing model.
     model = GlossingPipeline(
@@ -119,7 +119,7 @@ if __name__ == '__main__':
     predictions = trainer.predict(model, dataloaders=dm.test_dataloader())
 
     # Create an inverse mapping for the gloss vocabulary.
-    inv_gloss_vocab = {idx: token for token, idx in dm.train_dataset.gloss_vocab.items()}
+    inv_gloss_vocab = {idx: token for token, idx in dm.target_tokenizer.get_stoi().items()}
 
     # Extract true glosses from the test dataset.
     true_glosses = []
@@ -146,7 +146,7 @@ if __name__ == '__main__':
             # Print predicted gloss and true gloss side by side.
             print(f"Sample {sample_index + 1}:")
             print(f"  Predicted Gloss: {predicted_gloss}")
-            #print(f"  True Gloss:     {true_glosses[sample_index]}")
+            print(f"  True Gloss:     {true_glosses[sample_index]}")
             print()  # Add a blank line for readability.
             sample_index += 1  # Increment the global sample index
 
@@ -154,5 +154,5 @@ if __name__ == '__main__':
     word_level_accuracy = compute_word_level_gloss_accuracy(predicted_glosses, true_glosses)
     morpheme_level_accuracy = compute_morpheme_level_gloss_accuracy(predicted_glosses, true_glosses)
 
-    print("\n", word_level_accuracy)
-    print("\n", morpheme_level_accuracy)
+    print("word level accuracy:", word_level_accuracy)
+    print("morpheme level accuracy:", morpheme_level_accuracy)

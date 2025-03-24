@@ -1,163 +1,168 @@
 """
 data.py
 
-This module loads glossing data from a plain-text file with the following format:
+This module loads glossing data from files in the custom format:
     \t <source sentence>
     \g <gloss>
     \l <translation>
 
-Each sample is separated by a blank line.
-It provides:
-  - A custom Dataset class (GlossingDataset) that reads the file, builds vocabularies (if not provided),
-    and converts text to padded tensors (including computing source lengths).
-  - A collate function that stacks samples into a batch.
-  - A LightningDataModule (GlossingDataModule) that returns DataLoader objects for training, validation, and testing.
+Each sample is separated by a blank line. This module provides a
+PyTorch LightningDataModule to load training, validation, and test data.
+The raw data is loaded as lists of tokens, and then converted to padded tensors
+via a custom collate function.
 """
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 from collections import Counter
 from typing import List, Dict, Optional
+from itertools import chain
 from pytorch_lightning import LightningDataModule
 from torchtext.vocab import build_vocab_from_iterator
+from functools import partial
 
-# Define special tokens.
-SPECIAL_TOKENS = ["<s>", "</s>", "<pad>", "<unk>"]
+# Special tokens for our tokenizers.
+SPECIAL_TOKENS = ["<pad>", "<unk>", "<s>", "</s>"]
 
 
-class GlossingDataset(Dataset):
-    def __init__(self, file_path: str, max_src_len: int = 100, max_tgt_len: int = 30, max_trans_len: int = 50,
-                 src_vocab: Optional[Dict[str, int]] = None,
-                 gloss_vocab: Optional[Dict[str, int]] = None,
-                 trans_vocab: Optional[Dict[str, int]] = None):
-        """
-        Reads glossing data from a file. Each sample in the file is separated by a blank line and is expected to contain:
-            \t <source sentence>
-            \g <gloss>
-            \l <translation>
+def read_glossing_file_custom(file_path: str) -> Dict[str, List]:
+    """
+    Reads a glossing file with the following format:
+      - Lines starting with "\t" contain the source sentence.
+      - Lines starting with "\g" contain the gloss.
+      - Lines starting with "\l" contain the translation.
+    Each sample is separated by a blank line.
 
-        The source sentence is tokenized at the character level (via flattening),
-        while gloss and translation are tokenized by whitespace.
+    Args:
+        file_path (str): Path to the data file.
 
-        Args:
-            file_path (str): Path to the data file.
-            max_src_len (int): Maximum source length (in characters when char_level=True).
-            max_tgt_len (int): Maximum gloss length.
-            max_trans_len (int): Maximum translation length.
-            src_vocab (Optional[Dict[str,int]]): Pre-built vocabulary for source tokens (character-level).
-            gloss_vocab (Optional[Dict[str,int]]): Pre-built vocabulary for gloss tokens.
-            trans_vocab (Optional[Dict[str,int]]): Pre-built vocabulary for translation tokens.
-        """
-        self.max_src_len = max_src_len
-        self.max_tgt_len = max_tgt_len
-        self.max_trans_len = max_trans_len
-        self.samples = self.read_file(file_path)
-
-        # If vocabularies are not provided, build them from the data.
-        self.src_vocab = src_vocab if src_vocab is not None else self.build_vocab([s["source"] for s in self.samples],
-                                                                                  char_level=True)
-        self.gloss_vocab = gloss_vocab if gloss_vocab is not None else self.build_vocab(
-            [s["gloss"] for s in self.samples], char_level=False)
-        self.trans_vocab = trans_vocab if trans_vocab is not None else self.build_vocab(
-            [s["translation"] for s in self.samples], char_level=False)
-
-        # Ensure special tokens exist in the gloss vocabulary.
-        for token in SPECIAL_TOKENS:
-            if token not in self.gloss_vocab:
-                self.gloss_vocab[token] = len(self.gloss_vocab)
-
-    def read_file(self, file_path: str) -> List[Dict[str, Optional[List[str]]]]:
-        samples = []
-        current_sample = {"source": None, "gloss": None, "translation": None}
-        with open(file_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    if any(current_sample.values()):
-                        samples.append(current_sample)
-                    current_sample = {"source": None, "gloss": None, "translation": None}
-                    continue
-                if line.startswith("\\t"):
-                    current_sample["source"] = line[2:].strip().split()
-                elif line.startswith("\\g"):
-                    current_sample["gloss"] = line[2:].strip().split()
-                elif line.startswith("\\l"):
-                    current_sample["translation"] = line[2:].strip().split()
-                else:
-                    continue
-            if any(current_sample.values()):
-                samples.append(current_sample)
-        return samples
-
-    def build_vocab(self, texts: List[List[str]], char_level: bool = False) -> Dict[str, int]:
-        counter = Counter()
-        for tokens in texts:
-            if tokens is None:
+    Returns:
+        A dictionary with keys:
+            "sources": List[List[str]]
+            "targets": List[List[str]]
+            "translations": List[List[str]]
+    """
+    samples = []
+    current_sample = {"source": None, "gloss": None, "translation": None}
+    with open(file_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            # Blank line indicates end of current sample.
+            if not line:
+                if any(current_sample.values()):
+                    samples.append(current_sample)
+                current_sample = {"source": None, "gloss": None, "translation": None}
                 continue
-            if char_level:
-                for token in tokens:
-                    counter.update(list(token))
+            if line.startswith("\\t"):
+                current_sample["source"] = line[2:].strip().split()
+            elif line.startswith("\\g"):
+                current_sample["gloss"] = line[2:].strip().split()
+            elif line.startswith("\\l"):
+                current_sample["translation"] = line[2:].strip().split()
             else:
-                counter.update(tokens)
-        # Sort tokens to ensure contiguous indices.
-        sorted_tokens = sorted(counter.keys())
-        # Reserve index 0 for <pad> and 1 for <unk>, then assign contiguous indices starting at 2.
-        vocab = {tok: i for i, tok in enumerate(sorted_tokens, start=2)}
-        vocab["<pad>"] = 0
-        vocab["<unk>"] = 1
-        return vocab
+                continue
+        if any(current_sample.values()):
+            samples.append(current_sample)
+    sources = [s["source"] for s in samples]
+    targets = [s["gloss"] for s in samples]
+    translations = [s["translation"] for s in samples]
+    return {"sources": sources, "targets": targets, "translations": translations}
 
-    def text_to_tensor(self, tokens: List[str], vocab: Dict[str, int], max_len: int,
-                       char_level: bool = False) -> torch.Tensor:
-        if char_level:
-            # For source, if char_level is True, flatten tokens into individual characters.
-            chars = []
-            for token in tokens:
-                chars.extend(list(token))
-            tokens = chars
-        indices = [vocab.get(tok, vocab["<unk>"]) for tok in tokens][:max_len]
-        indices += [vocab["<pad>"]] * (max_len - len(indices))
-        return torch.tensor(indices, dtype=torch.long)
 
-    def tensor_to_text(self, tensor: torch.Tensor, vocab: Dict[str, int]) -> str:
-        inv_vocab = {idx: tok for tok, idx in vocab.items()}
-        tokens = [inv_vocab.get(idx.item(), "<unk>") for idx in tensor if idx.item() != vocab["<pad>"]]
-        return " ".join(tokens)
+class GlossingFileData:
+    def __init__(self, sources: List[List[str]], targets: List[List[str]], translations: List[List[str]]):
+        self.sources = sources
+        self.targets = targets
+        self.translations = translations
+
+
+class SequencePairDataset(Dataset):
+    def __init__(self, data: GlossingFileData):
+        super().__init__()
+        self.data = data
+        self._length = len(self.data.sources)
 
     def __len__(self) -> int:
-        return len(self.samples)
+        return self._length
 
-    def __getitem__(self, idx: int):
-        sample = self.samples[idx]
+    def __getitem__(self, idx: int) -> Dict[str, List[str]]:
+        return {
+            "source": self.data.sources[idx],
+            "target": self.data.targets[idx],
+            "translation": self.data.translations[idx]
+        }
+
+
+def collate_fn(batch: List[Dict[str, List[str]]],
+               source_tokenizer, target_tokenizer, trans_tokenizer,
+               max_src_len: int, max_tgt_len: int, max_trans_len: int) -> (
+torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor):
+    """
+    Collate function that converts a list of sample dictionaries (with raw token lists)
+    into padded tensors.
+    Returns:
+        src: Tensor of shape (batch, max_src_len)
+        src_lengths: Tensor of shape (batch,)
+        gloss: Tensor of shape (batch, max_tgt_len)
+        trans: Tensor of shape (batch, max_trans_len)
+    """
+    src_list, src_len_list, gloss_list, trans_list = [], [], [], []
+    for sample in batch:
+        # Convert source tokens to indices.
         src_tokens = sample["source"]
-        gloss_tokens = sample["gloss"]
+        src_indices = [source_tokenizer[token] for token in src_tokens]
+        src_len_list.append(len(src_indices))
+        if len(src_indices) < max_src_len:
+            src_indices = src_indices + [source_tokenizer["<pad>"]] * (max_src_len - len(src_indices))
+        else:
+            src_indices = src_indices[:max_src_len]
+        src_list.append(torch.tensor(src_indices, dtype=torch.long))
+
+        # For target (gloss), add start and end tokens.
+        tgt_tokens = ["<s>"] + sample["target"] + ["</s>"]
+        tgt_indices = [target_tokenizer[token] for token in tgt_tokens]
+        if len(tgt_indices) < max_tgt_len:
+            tgt_indices = tgt_indices + [target_tokenizer["<pad>"]] * (max_tgt_len - len(tgt_indices))
+        else:
+            tgt_indices = tgt_indices[:max_tgt_len]
+        gloss_list.append(torch.tensor(tgt_indices, dtype=torch.long))
+
+        # For translation.
         trans_tokens = sample["translation"]
+        trans_indices = [trans_tokenizer[token] for token in trans_tokens]
+        if len(trans_indices) < max_trans_len:
+            trans_indices = trans_indices + [trans_tokenizer["<pad>"]] * (max_trans_len - len(trans_indices))
+        else:
+            trans_indices = trans_indices[:max_trans_len]
+        trans_list.append(torch.tensor(trans_indices, dtype=torch.long))
 
-        # For source, flatten tokens into characters.
-        flattened_src = []
-        for token in src_tokens:
-            flattened_src.extend(list(token))
-        src_tensor = self.text_to_tensor(flattened_src, self.src_vocab, self.max_src_len, char_level=False)
-        # For gloss, add start and end tokens.
-        gloss_tokens = ["<s>"] + gloss_tokens + ["</s>"]
-        gloss_tensor = self.text_to_tensor(gloss_tokens, self.gloss_vocab, self.max_tgt_len, char_level=False)
-        trans_tensor = self.text_to_tensor(trans_tokens, self.trans_vocab, self.max_trans_len, char_level=False)
-
-        # Compute source length as the number of characters after flattening.
-        src_len = min(len(flattened_src), self.max_src_len)
-        return src_tensor, src_len, gloss_tensor, trans_tensor
-
-
-def collate_fn(batch: List) -> (torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor):
-    src_list, src_len_list, gloss_list, trans_list = zip(*batch)
-    src = torch.stack(src_list, dim=0)
+    src_tensor = torch.stack(src_list, dim=0)
     src_lengths = torch.tensor(src_len_list, dtype=torch.long)
-    gloss = torch.stack(gloss_list, dim=0)
-    trans = torch.stack(trans_list, dim=0)
-    return src, src_lengths, gloss, trans
+    gloss_tensor = torch.stack(gloss_list, dim=0)
+    trans_tensor = torch.stack(trans_list, dim=0)
+    return src_tensor, src_lengths, gloss_tensor, trans_tensor
+
+
+def get_collate_fn(source_tokenizer, target_tokenizer, trans_tokenizer,
+                   max_src_len: int, max_tgt_len: int, max_trans_len: int):
+    """
+    Returns a collate function with bound tokenizers and maximum lengths.
+    """
+    return partial(collate_fn,
+                   source_tokenizer=source_tokenizer,
+                   target_tokenizer=target_tokenizer,
+                   trans_tokenizer=trans_tokenizer,
+                   max_src_len=max_src_len,
+                   max_tgt_len=max_tgt_len,
+                   max_trans_len=max_trans_len)
 
 
 class GlossingDataModule(LightningDataModule):
+    """
+    PyTorch Lightning DataModule for glossing data.
+    Expects three files: train, validation, and test.
+    """
+
     def __init__(self, train_file: str, val_file: str, test_file: str, batch_size: int = 32,
                  max_src_len: int = 100, max_tgt_len: int = 30, max_trans_len: int = 50):
         super().__init__()
@@ -171,73 +176,94 @@ class GlossingDataModule(LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         if stage == "fit" or stage is None:
-            # Build training dataset.
-            self.train_dataset = GlossingDataset(self.train_file, self.max_src_len, self.max_tgt_len,
-                                                 self.max_trans_len)
-            # Build validation dataset using training vocabularies.
-            self.val_dataset = GlossingDataset(
-                self.val_file, self.max_src_len, self.max_tgt_len, self.max_trans_len,
-                src_vocab=self.train_dataset.src_vocab,
-                gloss_vocab=self.train_dataset.gloss_vocab,
-                trans_vocab=self.train_dataset.trans_vocab
-            )
-            self.src_vocab = self.train_dataset.src_vocab
-            self.gloss_vocab = self.train_dataset.gloss_vocab
-            self.trans_vocab = self.train_dataset.trans_vocab
-            self.source_alphabet_size = len(self.src_vocab)
-            self.target_alphabet_size = len(self.gloss_vocab)
-            self.trans_alphabet_size = len(self.trans_vocab)
+            train_data_dict = read_glossing_file_custom(self.train_file)
+            val_data_dict = read_glossing_file_custom(self.val_file)
+            self.train_dataset = SequencePairDataset(GlossingFileData(
+                sources=train_data_dict["sources"],
+                targets=train_data_dict["targets"],
+                translations=train_data_dict["translations"]
+            ))
+            self.val_dataset = SequencePairDataset(GlossingFileData(
+                sources=val_data_dict["sources"],
+                targets=val_data_dict["targets"],
+                translations=val_data_dict["translations"]
+            ))
+            # Build vocabularies from training data.
+            source_tokens = list(set(token for sentence in train_data_dict["sources"] for token in sentence))
+            target_tokens = list(set(token for sentence in train_data_dict["targets"] for token in sentence))
+            trans_tokens = list(set(token for sentence in train_data_dict["translations"] for token in sentence))
+            for token in SPECIAL_TOKENS:
+                if token not in source_tokens:
+                    source_tokens.append(token)
+                if token not in target_tokens:
+                    target_tokens.append(token)
+                if token not in trans_tokens:
+                    trans_tokens.append(token)
+            self.source_alphabet = sorted(source_tokens)
+            self.target_alphabet = sorted(target_tokens)
+            self.trans_alphabet = sorted(trans_tokens)
+            self.source_alphabet_size = len(self.source_alphabet)
+            self.target_alphabet_size = len(self.target_alphabet)
+            self.trans_alphabet_size = len(self.trans_alphabet)
             # Build tokenizers using torchtext's build_vocab_from_iterator.
-            self.source_tokenizer = build_vocab_from_iterator([[token] for token in sorted(self.src_vocab.keys())],
+            self.source_tokenizer = build_vocab_from_iterator([[token] for token in self.source_alphabet],
                                                               specials=SPECIAL_TOKENS)
-            self.target_tokenizer = build_vocab_from_iterator([[token] for token in sorted(self.gloss_vocab.keys())],
+            self.target_tokenizer = build_vocab_from_iterator([[token] for token in self.target_alphabet],
                                                               specials=SPECIAL_TOKENS)
+            self.trans_tokenizer = build_vocab_from_iterator([[token] for token in self.trans_alphabet],
+                                                             specials=SPECIAL_TOKENS)
             self.source_tokenizer.set_default_index(self.source_tokenizer["<unk>"])
             self.target_tokenizer.set_default_index(self.target_tokenizer["<unk>"])
-            self._batch_collate = collate_fn
+            self.trans_tokenizer.set_default_index(self.trans_tokenizer["<unk>"])
+            # Get a bound collate function.
+            self._batch_collate = get_collate_fn(self.source_tokenizer, self.target_tokenizer,
+                                                 self.trans_tokenizer, self.max_src_len,
+                                                 self.max_tgt_len, self.max_trans_len)
         if stage == "test" or stage is None:
-            self.test_dataset = GlossingDataset(
-                self.test_file, self.max_src_len, self.max_tgt_len, self.max_trans_len,
-                src_vocab=self.train_dataset.src_vocab,
-                gloss_vocab=self.train_dataset.gloss_vocab,
-                trans_vocab=self.train_dataset.trans_vocab
-            )
+            test_data_dict = read_glossing_file_custom(self.test_file)
+            self.test_dataset = SequencePairDataset(GlossingFileData(
+                sources=test_data_dict["sources"],
+                targets=test_data_dict["targets"],
+                translations=test_data_dict["translations"]
+            ))
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True,
-                          collate_fn=self._batch_collate, num_workers=6, persistent_workers=True)
+                          collate_fn=self._batch_collate, num_workers=4, persistent_workers=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False,
-                          collate_fn=self._batch_collate, num_workers=6, persistent_workers=True)
+                          collate_fn=self._batch_collate, num_workers=4, persistent_workers=True)
 
     def test_dataloader(self):
         return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False,
-                          collate_fn=self._batch_collate, num_workers=6, persistent_workers=True)
+                          collate_fn=self._batch_collate, num_workers=4, persistent_workers=True)
 
 
 if __name__ == "__main__":
-    # Example usage.
-    train_file = "data/Lezgi/lez-train-track1-uncovered"
-    val_file = "data/Lezgi/lez-dev-track1-uncovered"
-    test_file = "data/Lezgi/lez-test-track1-uncovered"
+    train_file = "data/Gitksan/git-train-track1-uncovered"
+    val_file = "data/Gitksan/git-dev-track1-uncovered"
+    test_file = "data/Gitksan/git-test-track1-uncovered"
 
-    dm = GlossingDataModule(train_file, val_file, test_file, batch_size=32)
+    dm = GlossingDataModule(train_file, val_file, test_file, batch_size=2)
     dm.setup(stage="fit")
     dm.setup(stage="test")
-    print("Number of training samples:", len(dm.train_dataset))
-    print("Number of validation samples:", len(dm.val_dataset))
-    print("Number of test samples:", len(dm.test_dataset))
+    print("Training samples:", len(dm.train_dataset))
+    print("Validation samples:", len(dm.val_dataset))
+    print("Test samples:", len(dm.test_dataset))
 
-    # Print a single batch sample in text format.
-    loader = dm.test_dataloader()
-    for batch in loader:
+    # Print a single batch sample for training (in text format).
+    train_loader = dm.test_dataloader()
+    for batch in train_loader:
         src_tensor, src_lengths, gloss_tensor, trans_tensor = batch
         print("Batch sample (in text format):")
         for i in range(src_tensor.size(0)):
-            src_text = dm.test_dataset.tensor_to_text(src_tensor[i], dm.test_dataset.src_vocab)
-            gloss_text = dm.test_dataset.tensor_to_text(gloss_tensor[i], dm.test_dataset.gloss_vocab)
-            trans_text = dm.test_dataset.tensor_to_text(trans_tensor[i], dm.test_dataset.trans_vocab)
+            src_text = " ".join([dm.source_tokenizer.get_itos()[idx] for idx in src_tensor[i].tolist() if
+                                 idx != dm.source_tokenizer["<pad>"]])
+            gloss_text = " ".join([dm.target_tokenizer.get_itos()[idx] for idx in gloss_tensor[i].tolist() if
+                                   idx != dm.target_tokenizer["<pad>"]])
+            trans_text = " ".join([dm.trans_tokenizer.get_itos()[idx] for idx in trans_tensor[i].tolist() if
+                                   idx != dm.trans_tokenizer["<pad>"]])
             print(f"Sample {i + 1}:")
             print("  Source:", src_text)
             print("  Gloss: ", gloss_text)
