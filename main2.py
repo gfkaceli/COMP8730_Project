@@ -28,7 +28,7 @@ def make_argument_parser():
     parser.add_argument("--layers",
                         type=int, default=2, required=False, help="Number of Layers")
     parser.add_argument("--dropout",
-                        type=int, default=0.1, required=False, help="Dropout for each Layer")
+                        type=float, default=0.1, required=False, help="Dropout for each Layer")
     parser.add_argument("--lr",
                         type=int, default=0.001, required=False, help="The learning rate")
     parser.add_argument("--embdim",
@@ -146,15 +146,13 @@ if __name__ == '__main__':
             # Print predicted gloss and true gloss side by side.
             print(f"Sample {sample_index + 1}:")
             print(f"  Predicted Gloss: {predicted_gloss}")
-            print(f"  True Gloss:     {true_glosses[sample_index]}")
+            #print(f"  True Gloss:     {true_glosses[sample_index]}")
             print()  # Add a blank line for readability.
             sample_index += 1  # Increment the global sample index
 
     # Calculate and print word-level and morpheme-level gloss accuracy.
-    print(type(predicted_glosses))
-    print(type(true_glosses))
     word_level_accuracy = compute_word_level_gloss_accuracy(predicted_glosses, true_glosses)
     morpheme_level_accuracy = compute_morpheme_level_gloss_accuracy(predicted_glosses, true_glosses)
 
-    print("\nWord-Level Gloss Accuracy:", word_level_accuracy)
-    print("Morpheme-Level Gloss Accuracy:", morpheme_level_accuracy)
+    print("\n", word_level_accuracy)
+    print("\n", morpheme_level_accuracy)
