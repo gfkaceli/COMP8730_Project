@@ -146,7 +146,7 @@ Follow these steps:
   - **--lr:** the learning rate
   - **--embdim:** the embedding dimensions
   - **--ffdim:** the feed forward dimensions
-  - **--numheads:** the number of classification heads
+  - **--numheads:** the number of attention heads
   - **--epochs:** the number of epochs
 
   

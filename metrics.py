@@ -98,37 +98,39 @@ def compute_word_level_gloss_accuracy(predictions: list, targets: list) -> dict:
             'accuracy': total_correct / total_tokens}
 
 
-def compute_morpheme_level_gloss_accuracy(predictions: list, targets: list, pad_token: str = "NULL") -> float:
+def compute_morpheme_level_gloss_accuracy(predictions: list, targets: list) -> dict:
     """
-    Computes morpheme-level gloss accuracy.
-    For each prediction–target pair, the function splits the gloss strings using
-    re.split(r"\s|-", text) (the same as in IGTLine). If the predicted number of morphemes
-    is less than the gold, it pads the predicted tokens with pad_token; if greater, it truncates them.
-    Finally, it computes the fraction of matching morphemes.
+    Computes word-level glossing accuracy over a set of predictions.
+    This implementation follows the eval_accuracy function from eval.py.
+    For each prediction–target pair (both as strings), it splits into tokens,
+    compares tokens in order (ignoring any predicted '[UNK]'), and computes:
+      - average_accuracy: average of per-example accuracies
+      - accuracy: overall token accuracy across the dataset
 
     Args:
         predictions (list): List of predicted gloss strings.
-        targets (list): List of gold standard gloss strings.
-        pad_token (str): The token to pad with if the predicted morpheme list is too short.
+        targets (list): List of target (gold) gloss strings.
 
     Returns:
-        float: Morpheme-level gloss accuracy as a fraction.
+        dict: A dictionary with keys 'average_accuracy' and 'accuracy'.
     """
+    if not targets:
+        return {'average_accuracy': 1.0, 'accuracy': 1.0}
+
     total_correct = 0
     total_tokens = 0
+    summed_accuracies = 0.0
+
     for pred, target in zip(predictions, targets):
-        # split for morpheme accuracy calculation
         pred_tokens = [tok for tok in re.split(r"\s|-", pred.strip()) if tok]
         target_tokens = [tok for tok in re.split(r"\s|-", target.strip()) if tok]
-
-        # Pad or truncate predicted tokens to match the target length.
-        if len(pred_tokens) < len(target_tokens):
-            pred_tokens += [pad_token] * (len(target_tokens) - len(pred_tokens))
-        elif len(pred_tokens) > len(target_tokens):
-            pred_tokens = pred_tokens[:len(target_tokens)]
-
-        correct = sum(1 for p_tok, t_tok in zip(pred_tokens, target_tokens) if p_tok == t_tok)
-        total_correct += correct
+        entry_correct = 0
+        for i in range(len(target_tokens)):
+            if i < len(pred_tokens) and pred_tokens[i] == target_tokens[i] and pred_tokens[i] != '<unk>':
+                entry_correct += 1
+        summed_accuracies += entry_correct / len(target_tokens)
+        total_correct += entry_correct
         total_tokens += len(target_tokens)
 
-    return total_correct / total_tokens if total_tokens > 0 else 1.0
+    return {'average_accuracy': summed_accuracies / len(targets),
+            'accuracy': total_correct / total_tokens}
