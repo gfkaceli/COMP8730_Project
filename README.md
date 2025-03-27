@@ -101,8 +101,9 @@ Follow these steps:
 4. **Run the Training and Inference Scripts**
     ```bash
    python main.py --language Gitksan --batch 7 --epochs 20
-   python main.py --language Lezgi --batch 128 --numheads 32 --epochs 35
-   python main.py --language Natugu --batch 128 --numheads 64 --epochs 35
+   python main.py --language Lezgi --batch 128 --numheads 32 --epochs 30
+   python main.py --language Natugu --dropout 0.1354 --batch 128 --numheads 64 --epochs 20
+
 
 **CONDA VIEW**
 
@@ -126,8 +127,8 @@ Follow these steps:
 4. **Run the Training and Inference Script**
     ```bash
    python main.py --language Gitksan --batch 7 --epochs 20
-   python main.py --language Lezgi --batch 128 --numheads 32 --epochs 35
-   python main.py --language Natugu --batch 128 --numheads 64 --epochs 35
+   python main.py --language Lezgi --batch 128 --numheads 32 --epochs 30
+   python main.py --language Natugu --dropout 0.1354 --batch 128 --numheads 64 --epochs 20
 
    
 ## Notes
