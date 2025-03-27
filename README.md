@@ -130,7 +130,7 @@ Follow these steps:
    python main.py --language Gitksan --batch 7 --epochs 20
    python main.py --language Lezgi --batch 128 --numheads 32 --epochs 30
    python main.py --language Natugu --dropout 0.1354 --batch 128 --numheads 64 --epochs 20
-   python main.py --language Tsez --batch 128c --epochs 25
+   python main.py --language Tsez --batch 128 --epochs 25
 
    
 ## Notes
