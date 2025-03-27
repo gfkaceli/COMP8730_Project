@@ -63,7 +63,6 @@ def average_word_edit_distance(predictions: list[str], targets: list[str]) -> fl
 def compute_word_level_gloss_accuracy(predictions: list, targets: list) -> dict:
     """
     Computes word-level glossing accuracy over a set of predictions.
-    This implementation follows the eval_accuracy function from eval.py.
     For each prediction–target pair (both as strings), it splits into tokens,
     compares tokens in order (ignoring any predicted '[UNK]'), and computes:
       - average_accuracy: average of per-example accuracies
