@@ -30,7 +30,7 @@ def make_argument_parser():
     parser.add_argument("--dropout",
                         type=float, default=0.1, required=False, help="Dropout for each Layer")
     parser.add_argument("--lr",
-                        type=int, default=0.001, required=False, help="The learning rate")
+                        type=float, default=0.001, required=False, help="The learning rate")
     parser.add_argument("--embdim",
                         type=int, default=128, required=False, help="Embedding Dimensions")
     parser.add_argument("--ffdim",
